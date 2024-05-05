@@ -1,7 +1,10 @@
+# python
 **/__pycache__/
 **/venv/
+.coverage
+
+# go
+cover.out
 
 /.vscode/
-
-.coverage
 *.pdf

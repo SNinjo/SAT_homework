@@ -1,11 +1,9 @@
 package employee
 
 import (
-	"bytes"
-	"io"
-	"log"
 	"multithreading/meat"
-	"os"
+	"multithreading/testtool"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,51 +14,38 @@ import (
 
 type meat1NoSeconds struct{}
 
-func (_ meat1NoSeconds) GetName() string {
+func (meat1NoSeconds) GetName() string {
 	return "肉1"
 }
-func (_ meat1NoSeconds) GetProcessingSeconds() int {
+func (meat1NoSeconds) GetProcessingSeconds() int {
 	return 0
 }
 
 type meat2NoSeconds struct{}
 
-func (_ meat2NoSeconds) GetName() string {
+func (meat2NoSeconds) GetName() string {
 	return "肉2"
 }
-func (_ meat2NoSeconds) GetProcessingSeconds() int {
+func (meat2NoSeconds) GetProcessingSeconds() int {
 	return 0
 }
 
-func captureOutput(function func()) string {
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		panic(err)
-	}
-	stdout := os.Stdout
-	stderr := os.Stderr
-	defer func() {
-		os.Stdout = stdout
-		os.Stderr = stderr
-		log.SetOutput(os.Stderr)
-	}()
-	os.Stdout = writer
-	os.Stderr = writer
-	log.SetOutput(writer)
+type meat1With1Seconds struct{}
 
-	out := make(chan string)
-	waitGroup := new(sync.WaitGroup)
-	waitGroup.Add(1)
-	go func() {
-		var buf bytes.Buffer
-		waitGroup.Done()
-		io.Copy(&buf, reader)
-		out <- buf.String()
-	}()
-	waitGroup.Wait()
-	function()
-	writer.Close()
-	return <-out
+func (meat1With1Seconds) GetName() string {
+	return "肉1"
+}
+func (meat1With1Seconds) GetProcessingSeconds() int {
+	return 1
+}
+
+type meat2With2Seconds struct{}
+
+func (meat2With2Seconds) GetName() string {
+	return "肉2"
+}
+func (meat2With2Seconds) GetProcessingSeconds() int {
+	return 2
 }
 
 func TestGetCurrentTime(t *testing.T) {
@@ -77,16 +62,18 @@ func TestGetCurrentTime(t *testing.T) {
 	patch.Unpatch()
 }
 
-func TestEmployeeProcess(t *testing.T) {
-	mpatch.PatchMethod(time.Now, func() time.Time {
+func TestEmployeeProcess_output(t *testing.T) {
+	patch, _ := mpatch.PatchMethod(time.Now, func() time.Time {
 		return time.Date(2001, 01, 01, 00, 00, 00, 0, time.UTC)
 	})
+	defer patch.Unpatch()
+
 	waitGroup := new(sync.WaitGroup)
 	waitGroup.Add(2)
 	channelMeat := make(chan meat.Meat, 2)
 	channelMeat <- meat1NoSeconds{}
 	channelMeat <- meat2NoSeconds{}
-	output := captureOutput(func() {
+	output := testtool.CaptureOutput(func() {
 		go Employee{Id: "ID"}.process(channelMeat, waitGroup)
 		waitGroup.Wait()
 	})
@@ -94,4 +81,38 @@ func TestEmployeeProcess(t *testing.T) {
 		"ID 在 2001-01-01 00:00:00 處理完肉1\n" +
 		"ID 在 2001-01-01 00:00:00 取得肉2\n" +
 		"ID 在 2001-01-01 00:00:00 處理完肉2\n"))
+}
+
+func TestEmployeeProcess_processingTime(t *testing.T) {
+	waitGroup := new(sync.WaitGroup)
+	waitGroup.Add(2)
+	channelMeat := make(chan meat.Meat, 2)
+	channelMeat <- meat1With1Seconds{}
+	channelMeat <- meat2With2Seconds{}
+	assert.True(t, testtool.IsExecutionTimeInRange(func() {
+		go Employee{Id: "ID"}.process(channelMeat, waitGroup)
+		waitGroup.Wait()
+	}, 3*time.Second, 3500*time.Millisecond))
+}
+
+func TestEmployeesProcess_output(t *testing.T) {
+	meatList := []meat.Meat{meat1NoSeconds{}, meat2NoSeconds{}}
+	employees := Employees{
+		All: []Employee{{Id: "A"}, {Id: "B"}},
+	}
+	output := testtool.CaptureOutput(func() {
+		employees.Process(meatList)
+	})
+	assert.Equal(t, strings.Count(output, "\n"), 2*2)
+}
+
+func TestEmployeesProcess_processingTime(t *testing.T) {
+	meatList := []meat.Meat{meat1With1Seconds{}, meat2With2Seconds{}}
+	employees := Employees{
+		All: []Employee{{Id: "A"}, {Id: "B"}},
+	}
+	totalProcessingTime := 1*time.Second + 2*time.Second
+	assert.True(t, testtool.IsExecutionTimeInRange(func() {
+		employees.Process(meatList)
+	}, totalProcessingTime/2, totalProcessingTime))
 }

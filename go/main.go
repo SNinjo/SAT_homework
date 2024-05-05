@@ -22,6 +22,7 @@ func main() {
 		meatList[i], meatList[j] = meatList[j], meatList[i]
 	})
 
+	// 創建處理肉品的員工並賦予 ID
 	employees := employee.Employees{
 		All: []employee.Employee{{Id: "A"}, {Id: "B"}, {Id: "C"}, {Id: "D"}, {Id: "E"}},
 	}
